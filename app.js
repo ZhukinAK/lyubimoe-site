@@ -6,7 +6,7 @@ const storageKeys = {
   links: "twoplace.links"
 };
 
-const accessHash = "256bf3ec846e4b0022f5a112fcb5f0d8d63de49ad3347411705539dff8421782";
+const accessHash = "628f5fa6d2aa475fc79a72accf188a13694b6a19470db07cdcafcc37dd0bb90c";
 
 const words = [
   { word: "объятие", hint: "То, чего особенно не хватает на расстоянии" },
