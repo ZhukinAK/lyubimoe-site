@@ -5,7 +5,7 @@ const storageKeys = {
   links: "twoplace.links"
 };
 
-const accessHash = "dbe56f2d3bf0ee960d5950fbb280f4f874c0e9a141eaf2db1fcbe399e813daab";
+const accessHash = "076ec7900688f607934e67e25391ee823594bb70f8940305fdb1d837a5a161b9";
 const galleryBucket = "gallery";
 const requestTimeoutMs = 180000;
 const signedUrlTtlSeconds = 3600;

@@ -68,7 +68,7 @@ create table if not exists public.game_sessions (
 );
 
 insert into public.rooms (slug, passphrase_hash)
-values ('preview', 'dbe56f2d3bf0ee960d5950fbb280f4f874c0e9a141eaf2db1fcbe399e813daab')
+values ('preview', '076ec7900688f607934e67e25391ee823594bb70f8940305fdb1d837a5a161b9')
 on conflict (slug) do update
 set passphrase_hash = excluded.passphrase_hash;
 
