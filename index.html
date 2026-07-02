@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Место для двоих</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=memories-layout-links-v1">
   </head>
   <body class="locked">
     <section class="auth-screen" aria-labelledby="auth-title">
@@ -49,16 +49,6 @@
               <div class="hero-actions">
                 <a class="button primary" href="#games">Начать игру</a>
                 <a class="button ghost" href="#gallery">Открыть галерею</a>
-              </div>
-            </div>
-            <div class="status-board" aria-label="Сводка пространства">
-              <div>
-                <span class="metric" id="played-count">0</span>
-                <span>партий сегодня</span>
-              </div>
-              <div>
-                <span class="metric" id="gallery-count">0</span>
-                <span>картинок в галерее</span>
               </div>
             </div>
           </div>
@@ -170,30 +160,81 @@
             </label>
             <button class="button primary" type="submit">Добавить</button>
           </form>
+          <p class="sync-status" id="gallery-status">Галерея подключается...</p>
 
           <div class="gallery-grid" id="gallery-grid"></div>
         </section>
 
         <section class="view" id="memories" data-view>
-          <div class="section-heading">
-            <p class="eyebrow">Воспоминания</p>
-            <h2>Маленькая общая лента</h2>
-            <p>Можно оставить заметку, идею для вечера или фразу, которую не хочется потерять.</p>
-          </div>
+          <div class="memories-top">
+            <div class="memories-main">
+              <div class="section-heading">
+                <p class="eyebrow">Воспоминания</p>
+                <h2>Маленькая общая лента</h2>
+                <p>Можно оставить заметку, идею для вечера или фразу, которую не хочется потерять.</p>
+              </div>
 
-          <form class="composer" id="memory-form">
-            <label>
-              <span>Запись</span>
-              <textarea id="memory-text" rows="3" maxlength="220" placeholder="Что добавим сюда?"></textarea>
-            </label>
-            <button class="button primary" type="submit">Сохранить</button>
-          </form>
+              <form class="composer memory-composer" id="memory-form">
+                <label class="memory-text-field">
+                  <span>Запись</span>
+                  <textarea id="memory-text" rows="3" maxlength="600" placeholder="Что добавим сюда?"></textarea>
+                </label>
+                <div class="memory-side-fields">
+                  <label>
+                    <span>Дата</span>
+                    <input type="date" id="memory-date">
+                  </label>
+                  <label>
+                    <span>Метка</span>
+                    <select id="memory-label">
+                      <option value="момент">момент</option>
+                      <option value="идея">идея</option>
+                      <option value="важное">важное</option>
+                      <option value="вечер">вечер</option>
+                      <option value="смешное">смешное</option>
+                    </select>
+                  </label>
+                </div>
+                <button class="button primary" type="submit">Сохранить</button>
+              </form>
+            </div>
+
+            <section class="memory-calendar" aria-label="Календарь воспоминаний">
+              <div class="calendar-header">
+                <button class="calendar-nav" type="button" id="calendar-prev" aria-label="Предыдущий месяц">‹</button>
+                <h3 id="calendar-title">Месяц</h3>
+                <button class="calendar-nav" type="button" id="calendar-next" aria-label="Следующий месяц">›</button>
+              </div>
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>пн</span>
+                <span>вт</span>
+                <span>ср</span>
+                <span>чт</span>
+                <span>пт</span>
+                <span>сб</span>
+                <span>вс</span>
+              </div>
+              <div class="calendar-grid" id="calendar-grid"></div>
+              <div class="calendar-filter hidden" id="calendar-filter">
+                <span id="calendar-filter-text"></span>
+                <button type="button" id="calendar-clear">Показать всё</button>
+              </div>
+            </section>
+          </div>
+          <p class="sync-status" id="sync-status">Общая комната подключается...</p>
 
           <div class="timeline" id="timeline"></div>
         </section>
       </main>
     </div>
+    <div class="photo-viewer hidden" id="photo-viewer" role="dialog" aria-modal="true" aria-label="Фотография">
+      <button class="photo-viewer-close" type="button" id="photo-viewer-close" aria-label="Закрыть">Закрыть</button>
+      <img id="photo-viewer-image" alt="">
+      <p id="photo-viewer-caption"></p>
+    </div>
 
-    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js?v=memories-layout-links-v1"></script>
+    <script src="app.js?v=memories-layout-links-v1"></script>
   </body>
 </html>
