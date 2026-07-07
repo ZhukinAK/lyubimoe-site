@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Место для двоих</title>
-    <link rel="stylesheet" href="styles.css?v=prod-promote-20260702-v2">
+    <link rel="stylesheet" href="styles.css?v=file-button-v1">
   </head>
   <body class="locked">
     <section class="auth-screen" aria-labelledby="auth-title">
@@ -150,9 +150,13 @@
           </div>
 
           <form class="composer" id="gallery-form">
-            <label>
+            <label class="gallery-file-label">
               <span>Картинка</span>
-              <input type="file" id="gallery-file" accept="image/*">
+              <input class="gallery-file-input" type="file" id="gallery-file" accept="image/*">
+              <span class="gallery-file-control">
+                <span class="gallery-file-button">Выбрать картинку</span>
+                <span class="gallery-file-name" id="gallery-file-name">Файл не выбран</span>
+              </span>
             </label>
             <label>
               <span>Подпись</span>
@@ -235,6 +239,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js?v=prod-promote-20260702-v2"></script>
-    <script src="app.js?v=prod-promote-20260702-v2"></script>
+    <script src="app.js?v=file-button-v1"></script>
   </body>
 </html>

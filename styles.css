@@ -585,6 +585,59 @@ textarea:focus {
   box-shadow: 0 0 0 4px rgba(244, 167, 185, 0.22);
 }
 
+.gallery-file-label {
+  position: relative;
+}
+
+.gallery-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gallery-file-control {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 7px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.gallery-file-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  padding: 7px 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--rose-deep), #a978d8);
+  font-size: 0.86rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.gallery-file-name {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gallery-file-input:focus + .gallery-file-control {
+  border-color: rgba(207, 102, 127, 0.58);
+  box-shadow: 0 0 0 4px rgba(244, 167, 185, 0.22);
+}
+
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

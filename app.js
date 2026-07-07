@@ -688,9 +688,18 @@ function initGallery() {
   }
   sharedState.galleryReady = true;
 
+  const fileInput = document.querySelector("#gallery-file");
+  const fileName = document.querySelector("#gallery-file-name");
+  const updateGalleryFileName = () => {
+    if (!fileName || !fileInput) return;
+    fileName.textContent = fileInput.files[0]?.name || "Файл не выбран";
+  };
+
+  fileInput?.addEventListener("change", updateGalleryFileName);
+
   document.querySelector("#gallery-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    const file = document.querySelector("#gallery-file").files[0];
+    const file = fileInput?.files[0];
     const caption = document.querySelector("#gallery-caption").value.trim();
     if (!file || !sharedState.supabase || !sharedState.roomId) return;
 
@@ -727,6 +736,7 @@ function initGallery() {
         if (insertError) throw insertError;
 
         event.target.reset();
+        updateGalleryFileName();
         setSyncStatus("Картинка сохранена в общей комнате.");
         setGalleryStatus("Картинка сохранена.");
         await renderGallery();
