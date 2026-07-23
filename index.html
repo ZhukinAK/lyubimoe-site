@@ -13,8 +13,12 @@
         <h1 id="auth-title">Наша уютная комната</h1>
         <p class="lead">Только для нас.</p>
         <label>
-          <span>Фраза</span>
-          <input type="password" id="auth-passphrase" autocomplete="current-password" required>
+          <span>Имя</span>
+          <input type="text" id="auth-username" autocomplete="username" minlength="2" maxlength="40" required>
+        </label>
+        <label>
+          <span>Пароль</span>
+          <input type="password" id="auth-password" autocomplete="current-password" minlength="8" required>
         </label>
         <button class="button primary" type="submit">Войти</button>
         <p class="auth-error" id="auth-error" aria-live="polite"></p>
@@ -35,6 +39,7 @@
           <a href="#gallery" data-route="gallery">Галерея</a>
           <a href="#memories" data-route="memories">Воспоминания</a>
         </nav>
+        <button class="button small" type="button" id="logout-button">Выйти</button>
       </header>
 
       <main>
@@ -237,8 +242,7 @@
       <p id="photo-viewer-caption"></p>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js?v=prod-promote-20260702-v2"></script>
-    <script src="app.js?v=file-button-v1"></script>
+    <script src="api-config.js?v=yandex-api-v1"></script>
+    <script src="app.js?v=yandex-api-v1"></script>
   </body>
 </html>

@@ -1,0 +1,15 @@
+node_modules/
+.pnpm-store/
+.tools/
+backend/node_modules/
+backend/.env
+backend/.env.*
+!backend/.env.example
+infrastructure/.terraform/
+infrastructure/*.tfstate
+infrastructure/*.tfstate.*
+infrastructure/*.tfvars
+!infrastructure/example.tfvars
+infrastructure/function-stage*/
+migration/export/
+*.zip

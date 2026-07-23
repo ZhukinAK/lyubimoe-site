@@ -1,20 +1,16 @@
 const storageKeys = {
-  auth: "twoplace.auth",
-  room: "twoplace.room",
   played: "twoplace.played",
   links: "twoplace.links"
 };
 
-const accessHash = "076ec7900688f607934e67e25391ee823594bb70f8940305fdb1d837a5a161b9";
-const galleryBucket = "gallery";
-const requestTimeoutMs = 180000;
+const requestTimeoutMs = 30000;
 const signedUrlTtlSeconds = 3600;
 const imagePlaceholder =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%23f8fbff'/%3E%3C/svg%3E";
 const imageUrlCache = new Map();
 
 let sharedState = {
-  supabase: null,
+  user: null,
   roomId: null,
   initialized: false,
   galleryReady: false,
@@ -23,7 +19,8 @@ let sharedState = {
   memoriesCache: [],
   memoryCalendarMonth: null,
   selectedMemoryDate: null,
-  realtimeChannel: null
+  pollTimer: null,
+  activeRoute: "home"
 };
 
 function setStatus(selector, message) {
@@ -145,32 +142,64 @@ function getMemoryDate(item) {
   return item.memory_date || toDateKey(new Date(item.created_at));
 }
 
-function getSupabaseConfig() {
-  const config = window.LYUBIMOE_SUPABASE || {};
+function getApiConfig() {
+  const config = window.LYUBIMOE_API || {};
   return {
-    url: (config.url || "").trim(),
-    anonKey: (config.anonKey || "").trim(),
-    roomSlug: (config.roomSlug || "preview").trim()
+    baseUrl: (config.baseUrl || "").replace(/\/$/, ""),
+    roomSlug: (config.roomSlug || "preview").trim(),
+    pollIntervalMs: Number(config.pollIntervalMs) || 15000
   };
 }
 
-function getSupabaseClient() {
-  const config = getSupabaseConfig();
-  if (!config.url || !config.anonKey || !window.supabase?.createClient) {
-    return null;
+class ApiRequestError extends Error {
+  constructor(message, status, code) {
+    super(message);
+    this.status = status;
+    this.code = code;
   }
-
-  if (!sharedState.supabase) {
-    sharedState.supabase = window.supabase.createClient(config.url, config.anonKey);
-  }
-
-  return sharedState.supabase;
 }
 
-async function hashText(text) {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+async function apiRequest(path, options = {}) {
+  const { baseUrl } = getApiConfig();
+  if (!baseUrl) throw new ApiRequestError("API не настроен.", 0, "api_not_configured");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || requestTimeoutMs);
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: options.method || "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: {
+        ...(options.body ? { "content-type": "application/json" } : {}),
+        ...(options.version ? { "if-match": String(options.version) } : {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+    const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const apiError = payload.error || {};
+      throw new ApiRequestError(apiError.message || "Не получилось выполнить запрос.", response.status, apiError.code);
+    }
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") throw new ApiRequestError("Сервер долго не отвечает.", 0, "timeout");
+    if (error instanceof ApiRequestError) throw error;
+    throw new ApiRequestError("Нет соединения с сервером.", 0, "network_error");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function handleSessionError(error) {
+  if (error.status !== 401) return false;
+  sharedState.user = null;
+  sharedState.roomId = null;
+  document.body.classList.add("locked");
+  document.body.classList.remove("unlocked");
+  setStatus("#auth-error", "Сессия истекла. Войдите снова.");
+  stopPolling();
+  return true;
 }
 
 function unlockRoom() {
@@ -180,13 +209,13 @@ function unlockRoom() {
 
 function initAccessGate() {
   const form = document.querySelector("#auth-form");
-  const input = document.querySelector("#auth-passphrase");
+  const usernameInput = document.querySelector("#auth-username");
+  const passwordInput = document.querySelector("#auth-password");
   const submit = form.querySelector("button");
   const error = document.querySelector("#auth-error");
-  const supabaseClient = getSupabaseClient();
 
-  if (!supabaseClient) {
-    error.textContent = "Нужно заполнить Supabase URL и anon key в supabase-config.js.";
+  if (!getApiConfig().baseUrl) {
+    error.textContent = "API пока не настроен.";
     submit.disabled = true;
     return;
   }
@@ -197,51 +226,29 @@ function initAccessGate() {
     submit.disabled = true;
 
     try {
-      const config = getSupabaseConfig();
-      let { data: sessionData } = await supabaseClient.auth.getSession();
-      if (!sessionData.session) {
-        const { error: signInError } = await supabaseClient.auth.signInAnonymously();
-        if (signInError) throw signInError;
-      }
-
-      const hash = await hashText(input.value.trim());
-      if (hash !== accessHash) {
-        throw new Error("Не та фраза.");
-      }
-
-      const { data: roomId, error: joinError } = await supabaseClient.rpc("join_room", {
-        p_slug: config.roomSlug,
-        p_passphrase: input.value.trim()
+      const data = await apiRequest("/auth/login", {
+        method: "POST",
+        body: { username: usernameInput.value.trim(), password: passwordInput.value }
       });
-      if (joinError) throw joinError;
-
-      sharedState.roomId = roomId;
-      localStorage.setItem(storageKeys.auth, accessHash);
-      localStorage.setItem(storageKeys.room, roomId);
-      input.value = "";
+      sharedState.user = data.user;
+      sharedState.roomId = data.room.id;
+      passwordInput.value = "";
       unlockRoom();
       startSharedRoom();
     } catch (errorValue) {
       error.textContent = errorValue.message || "Не получилось войти.";
-      input.select();
+      passwordInput.select();
     } finally {
       submit.disabled = false;
     }
   });
 
-  if (localStorage.getItem(storageKeys.auth) === accessHash && localStorage.getItem(storageKeys.room)) {
-    supabaseClient.auth.getSession().then(({ data }) => {
-      if (!data.session) {
-        localStorage.removeItem(storageKeys.auth);
-        localStorage.removeItem(storageKeys.room);
-        return;
-      }
-
-      sharedState.roomId = localStorage.getItem(storageKeys.room);
+  apiRequest("/auth/me").then((data) => {
+      sharedState.user = data.user;
+      sharedState.roomId = data.room.id;
       unlockRoom();
       startSharedRoom();
-    });
-  }
+    }).catch(() => {});
 }
 
 function startSharedRoom() {
@@ -250,17 +257,19 @@ function startSharedRoom() {
   setSyncStatus("Общая комната подключена.");
   initGallery();
   initMemories();
-  initRealtime();
+  startPolling();
 }
 
 function setRoute(route) {
   const nextRoute = route || "home";
+  sharedState.activeRoute = nextRoute;
   document.querySelectorAll("[data-view]").forEach((view) => {
     view.classList.toggle("active", view.id === nextRoute);
   });
   document.querySelectorAll("[data-route]").forEach((link) => {
     link.classList.toggle("active", link.dataset.route === nextRoute);
   });
+  refreshActiveRoute();
 }
 
 function initRouter() {
@@ -465,16 +474,14 @@ function fileToGalleryImage(file, onReady, onError) {
   reader.readAsDataURL(file);
 }
 
-async function deleteGalleryItem(id) {
-  if (!sharedState.supabase || !sharedState.roomId) return;
-  const { error } = await sharedState.supabase
-    .from("gallery_items")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("room_id", sharedState.roomId);
-
-  if (error) {
-    alert("Не получилось удалить карточку.");
+async function deleteGalleryItem(id, version) {
+  if (!sharedState.roomId) return;
+  try {
+    await apiRequest(`/gallery/${encodeURIComponent(id)}`, { method: "DELETE", version });
+  } catch (error) {
+    if (handleSessionError(error)) return;
+    alert(error.status === 409 ? "Карточка уже изменилась на другом устройстве. Галерея будет обновлена." : "Не получилось удалить карточку.");
+    if (error.status === 409) renderGallery();
     return;
   }
 
@@ -504,20 +511,12 @@ function getUploadExtension(blob) {
 }
 
 async function getGalleryItems() {
-  const { data, error } = await retryOnce(() =>
-    withTimeout(
-      sharedState.supabase
-        .from("gallery_items")
-        .select("id, caption, storage_path, created_at")
-        .eq("room_id", sharedState.roomId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false }),
-      "Галерея долго не отвечает."
-    )
-  );
-
-  if (error) throw error;
-  return data;
+  const data = await retryOnce(() => apiRequest("/gallery"));
+  data.items.forEach((item) => imageUrlCache.set(item.storage_path, {
+    url: item.imageUrl,
+    expiresAt: Date.now() + (signedUrlTtlSeconds - 60) * 1000
+  }));
+  return data.items;
 }
 
 async function getGalleryImageUrl(storagePath) {
@@ -526,36 +525,10 @@ async function getGalleryImageUrl(storagePath) {
     return cached.url;
   }
 
-  try {
-    const { data, error } = await retryOnce(() =>
-      withTimeout(
-        sharedState.supabase.storage.from(galleryBucket).createSignedUrl(storagePath, signedUrlTtlSeconds),
-        "Картинка долго не отвечает."
-      )
-    );
-
-    if (error || !data?.signedUrl) throw error || new Error("Нет ссылки на картинку.");
-    imageUrlCache.set(storagePath, {
-      url: data.signedUrl,
-      expiresAt: Date.now() + (signedUrlTtlSeconds - 60) * 1000
-    });
-    return data.signedUrl;
-  } catch (signedUrlError) {
-    const { data, error } = await retryOnce(() =>
-      withTimeout(
-        sharedState.supabase.storage.from(galleryBucket).download(storagePath),
-        "Картинка долго не отвечает."
-      )
-    );
-
-    if (error || !data) throw error || signedUrlError;
-    const dataUrl = await blobToDataUrl(data);
-    imageUrlCache.set(storagePath, {
-      url: dataUrl,
-      expiresAt: Date.now() + 10 * 60 * 1000
-    });
-    return dataUrl;
-  }
+  const items = await getGalleryItems();
+  const item = items.find((candidate) => candidate.storage_path === storagePath);
+  if (!item?.imageUrl) throw new Error("Нет ссылки на картинку.");
+  return item.imageUrl;
 }
 
 async function loadGalleryImage(image, storagePath) {
@@ -613,7 +586,7 @@ async function renderGallery() {
   const grid = document.querySelector("#gallery-grid");
   grid.innerHTML = "";
 
-  if (!sharedState.supabase || !sharedState.roomId) {
+  if (!sharedState.roomId) {
     renderGalleryEmpty(grid);
     setGalleryStatus("Галерея ждёт входа.");
     return;
@@ -624,7 +597,8 @@ async function renderGallery() {
     setGalleryStatus("Загружаем галерею...");
     setSyncStatus("Загружаем общую комнату...");
     items = await getGalleryItems();
-  } catch {
+  } catch (error) {
+    if (handleSessionError(error)) return;
     renderGalleryEmpty(grid);
     setSyncStatus("Не получилось прочитать общую галерею.");
     setGalleryStatus("Не получилось прочитать галерею.");
@@ -668,7 +642,7 @@ async function renderGallery() {
     deleteButton.setAttribute("aria-label", `Удалить из галереи: ${item.caption || "изображение"}`);
     deleteButton.addEventListener("click", () => {
       if (confirm("Удалить эту карточку из галереи?")) {
-        deleteGalleryItem(item.id);
+        deleteGalleryItem(item.id, item.version);
       }
     });
     body.append(caption, date, deleteButton);
@@ -701,39 +675,27 @@ function initGallery() {
     event.preventDefault();
     const file = fileInput?.files[0];
     const caption = document.querySelector("#gallery-caption").value.trim();
-    if (!file || !sharedState.supabase || !sharedState.roomId) return;
+    if (!file || !sharedState.roomId) return;
 
     const submitButton = event.target.querySelector("button");
     submitButton.disabled = true;
     setGalleryStatus("Готовим картинку...");
 
     const saveItem = async (blob) => {
-      const id = createId();
-      const extension = getUploadExtension(blob);
-      const storagePath = `${sharedState.roomId}/${id}.${extension}`;
       try {
         setSyncStatus("Загружаем картинку...");
         setGalleryStatus("Загружаем картинку...");
-        const { error: uploadError } = await withTimeout(
-          sharedState.supabase.storage.from(galleryBucket).upload(storagePath, blob, {
-            contentType: blob.type || "image/jpeg",
-            upsert: false
-          }),
-          "Загрузка картинки долго не отвечает."
-        );
-
-        if (uploadError) throw uploadError;
-
-        const { error: insertError } = await withTimeout(
-          sharedState.supabase.from("gallery_items").insert({
-            room_id: sharedState.roomId,
-            caption,
-            storage_path: storagePath
-          }),
-          "Сохранение карточки долго не отвечает."
-        );
-
-        if (insertError) throw insertError;
+        const intent = await apiRequest("/gallery/upload-intent", {
+          method: "POST",
+          body: { caption, contentType: blob.type || "image/jpeg", size: blob.size }
+        });
+        const uploadResponse = await withTimeout(fetch(intent.uploadUrl, {
+          method: "PUT",
+          headers: { "content-type": blob.type || "image/jpeg" },
+          body: blob
+        }), "Загрузка картинки долго не отвечает.");
+        if (!uploadResponse.ok) throw new Error("Хранилище не приняло картинку.");
+        await apiRequest("/gallery/complete", { method: "POST", body: { id: intent.item.id } });
 
         event.target.reset();
         updateGalleryFileName();
@@ -741,6 +703,7 @@ function initGallery() {
         setGalleryStatus("Картинка сохранена.");
         await renderGallery();
       } catch (error) {
+        if (handleSessionError(error)) return;
         submitButton.disabled = false;
         setSyncStatus(`Не получилось добавить карточку: ${error.message}`);
         setGalleryStatus(`Не получилось добавить карточку: ${error.message}`);
@@ -836,16 +799,14 @@ function renderMemoryCalendar() {
   }
 }
 
-async function deleteMemoryItem(id) {
-  if (!sharedState.supabase || !sharedState.roomId) return;
-  const { error } = await sharedState.supabase
-    .from("memories")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("room_id", sharedState.roomId);
-
-  if (error) {
-    alert("Не получилось удалить запись.");
+async function deleteMemoryItem(id, version) {
+  if (!sharedState.roomId) return;
+  try {
+    await apiRequest(`/memories/${encodeURIComponent(id)}`, { method: "DELETE", version });
+  } catch (error) {
+    if (handleSessionError(error)) return;
+    alert(error.status === 409 ? "Запись уже изменилась на другом устройстве. Лента будет обновлена." : "Не получилось удалить запись.");
+    if (error.status === 409) renderMemories();
     return;
   }
 
@@ -891,7 +852,7 @@ function appendMemoryCard(timeline, item) {
     deleteButton.setAttribute("aria-label", "Удалить запись из воспоминаний");
     deleteButton.addEventListener("click", () => {
       if (confirm("Удалить эту запись?")) {
-        deleteMemoryItem(item.id);
+        deleteMemoryItem(item.id, item.version);
       }
     });
     card.append(deleteButton);
@@ -918,28 +879,15 @@ function renderMemoriesFromCache() {
 }
 
 async function getMemories() {
-  const { data, error } = await retryOnce(() =>
-    withTimeout(
-      sharedState.supabase
-        .from("memories")
-        .select("id, text, memory_date, label, created_at")
-        .eq("room_id", sharedState.roomId)
-        .is("deleted_at", null)
-        .order("memory_date", { ascending: false })
-        .order("created_at", { ascending: false }),
-      "Лента долго не отвечает."
-    )
-  );
-
-  if (error) throw error;
-  return data;
+  const data = await retryOnce(() => apiRequest("/memories"));
+  return data.items;
 }
 
 async function renderMemories() {
   const timeline = document.querySelector("#timeline");
   timeline.innerHTML = "";
 
-  if (!sharedState.supabase || !sharedState.roomId) {
+  if (!sharedState.roomId) {
     renderMemoryCalendar();
     renderMemoriesEmpty(timeline);
     return;
@@ -949,7 +897,8 @@ async function renderMemories() {
   try {
     memories = await getMemories();
     sharedState.memoriesCache = memories;
-  } catch {
+  } catch (error) {
+    if (handleSessionError(error)) return;
     if (sharedState.pendingMemories.length) {
       renderMemoriesFromCache();
     } else {
@@ -1004,7 +953,7 @@ function initMemories() {
     event.preventDefault();
     const input = document.querySelector("#memory-text");
     const text = input.value.trim();
-    if (!text || !sharedState.supabase || !sharedState.roomId) return;
+    if (!text || !sharedState.roomId) return;
 
     const submitButton = event.target.querySelector("button");
     const memoryDate = dateInput?.value || todayKey();
@@ -1029,22 +978,13 @@ function initMemories() {
       setSyncStatus("Связь медленная, но запись ещё сохраняется.");
     }, 10000);
 
-    sharedState.supabase
-      .from("memories")
-      .insert({ room_id: sharedState.roomId, text, memory_date: memoryDate, label })
-      .then(async ({ error }) => {
+    apiRequest("/memories", {
+      method: "POST",
+      body: { text, memoryDate, label }
+    })
+      .then(async () => {
         clearTimeout(slowSaveTimer);
         submitButton.disabled = false;
-        if (error) {
-          setSyncStatus(`Не получилось сохранить запись: ${error.message}`);
-          sharedState.pendingMemories = sharedState.pendingMemories.filter((item) => item.id !== pendingMemory.id);
-          input.value = text;
-          if (dateInput) dateInput.value = memoryDate;
-          if (labelInput) labelInput.value = label;
-          renderMemories();
-          alert("Не получилось сохранить запись.");
-          return;
-        }
         sharedState.pendingMemories = sharedState.pendingMemories.filter((item) => item.id !== pendingMemory.id);
         setSyncStatus("Запись сохранена в общей комнате.");
         await renderMemories();
@@ -1052,6 +992,7 @@ function initMemories() {
       .catch((error) => {
         clearTimeout(slowSaveTimer);
         submitButton.disabled = false;
+        if (handleSessionError(error)) return;
         setSyncStatus(`Не получилось сохранить запись: ${error.message}`);
         sharedState.pendingMemories = sharedState.pendingMemories.filter((item) => item.id !== pendingMemory.id);
         input.value = text;
@@ -1064,37 +1005,32 @@ function initMemories() {
   renderMemories();
 }
 
-function initRealtime() {
-  if (!sharedState.supabase || !sharedState.roomId) return;
-
-  if (sharedState.realtimeChannel) {
-    sharedState.supabase.removeChannel(sharedState.realtimeChannel);
-  }
-
-  sharedState.realtimeChannel = sharedState.supabase
-    .channel(`room-${sharedState.roomId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "gallery_items",
-        filter: `room_id=eq.${sharedState.roomId}`
-      },
-      () => renderGallery()
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "memories",
-        filter: `room_id=eq.${sharedState.roomId}`
-      },
-      () => renderMemories()
-    )
-    .subscribe();
+function refreshActiveRoute() {
+  if (!sharedState.initialized || document.hidden) return;
+  if (sharedState.activeRoute === "gallery") renderGallery();
+  if (sharedState.activeRoute === "memories") renderMemories();
 }
+
+function stopPolling() {
+  if (sharedState.pollTimer) clearInterval(sharedState.pollTimer);
+  sharedState.pollTimer = null;
+}
+
+function startPolling() {
+  stopPolling();
+  sharedState.pollTimer = setInterval(refreshActiveRoute, getApiConfig().pollIntervalMs);
+}
+
+function subscribe(roomId, handler) {
+  const timer = setInterval(() => {
+    if (!document.hidden && sharedState.roomId === roomId) handler({ type: "poll" });
+  }, getApiConfig().pollIntervalMs);
+  return () => clearInterval(timer);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshActiveRoute();
+});
 
 function defaultLinks() {
   return [
@@ -1196,9 +1132,25 @@ function initPhotoViewer() {
   });
 }
 
+function initLogout() {
+  document.querySelector("#logout-button")?.addEventListener("click", async () => {
+    try { await apiRequest("/auth/logout", { method: "POST" }); } catch {}
+    stopPolling();
+    sharedState.user = null;
+    sharedState.roomId = null;
+    sharedState.initialized = false;
+    sharedState.pendingMemories = [];
+    sharedState.memoriesCache = [];
+    imageUrlCache.clear();
+    document.body.classList.add("locked");
+    document.body.classList.remove("unlocked");
+  });
+}
+
 initAccessGate();
 initRouter();
 initGames();
 initLinks();
 initPhotoViewer();
+initLogout();
 updateCounters();
