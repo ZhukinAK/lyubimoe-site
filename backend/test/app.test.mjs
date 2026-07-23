@@ -33,7 +33,11 @@ function fixture() {
       return session && session.expiresAt > at ? session : null;
     },
     revokeSession: async (hash) => sessions.delete(hash),
-    listMemories: async () => memories.filter((item) => !item.deletedAt),
+    listMemories: async () => memories.filter((item) => !item.deletedAt).map((item) => ({
+      ...item,
+      authorDisplayName: user.displayName,
+      author_display_name: user.displayName
+    })),
     createMemory: async (input) => {
       const item = { ...input, memory_date: input.memoryDate, created_at: input.now.toISOString(), version: 1 };
       memories.push(item);
@@ -44,7 +48,11 @@ function fixture() {
       if (!item || item.version !== version) throw Object.assign(new Error("conflict"), { status: 409 });
       item.deletedAt = at;
     },
-    listGallery: async () => gallery.filter((item) => item.status === "ready" && !item.deletedAt),
+    listGallery: async () => gallery.filter((item) => item.status === "ready" && !item.deletedAt).map((item) => ({
+      ...item,
+      authorDisplayName: user.displayName,
+      author_display_name: user.displayName
+    })),
     createGalleryIntent: async (input) => {
       const item = { ...input, storage_path: input.objectKey, created_at: input.now.toISOString(), status: "pending", version: 1 };
       gallery.push(item);
@@ -108,6 +116,11 @@ test("login validates credentials and sets an HttpOnly cookie", async () => {
   assert.equal(good.statusCode, 200);
   assert.match(good.headers["set-cookie"], /HttpOnly/);
   assert.match(good.headers["set-cookie"], /Secure/);
+  assert.deepEqual(body(good).room, {
+    id: "22222222-2222-4222-8222-222222222222",
+    slug: "preview",
+    name: "Наша комната"
+  });
   assert.equal(body(good).user.displayName, "Александр");
 });
 
@@ -125,9 +138,12 @@ test("memory lifecycle preserves calendar date and version", async () => {
   const created = await app(request("POST", "/memories", { text: "Наш день", memoryDate: "2026-07-20", label: "важное" }, "lyubimoe_session=valid-token"));
   assert.equal(created.statusCode, 201);
   assert.equal(body(created).item.memory_date, "2026-07-20");
+  assert.equal(body(created).item.authorDisplayName, "Александр");
+  assert.equal(body(created).item.author_display_name, "Александр");
   const id = body(created).item.id;
   const listed = await app(request("GET", "/memories", undefined, "lyubimoe_session=valid-token"));
   assert.equal(body(listed).items.length, 1);
+  assert.equal(body(listed).items[0].authorDisplayName, "Александр");
   const deleted = await app(request("DELETE", `/memories/${id}`, undefined, "lyubimoe_session=valid-token", { "if-match": "1" }));
   assert.equal(deleted.statusCode, 200);
   assert.ok(memories[0].deletedAt);
@@ -149,7 +165,9 @@ test("gallery uses a pending intent before exposing the item", async () => {
   assert.equal(body(listed).items.length, 0);
   const complete = await app(request("POST", "/gallery/complete", { id: gallery[0].id }, "lyubimoe_session=valid-token"));
   assert.equal(complete.statusCode, 200);
+  assert.equal(body(complete).item.authorDisplayName, "Александр");
   listed = await app(request("GET", "/gallery", undefined, "lyubimoe_session=valid-token"));
   assert.equal(body(listed).items.length, 1);
   assert.match(body(listed).items[0].imageUrl, /read/);
+  assert.equal(body(listed).items[0].author_display_name, "Александр");
 });

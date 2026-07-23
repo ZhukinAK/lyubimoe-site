@@ -38,6 +38,12 @@ function setGalleryStatus(message) {
   setStatus("#gallery-status", message);
 }
 
+function updateCurrentUser(user) {
+  const currentUser = document.querySelector("#current-user");
+  if (!currentUser) return;
+  currentUser.textContent = user?.displayName ? `Вы вошли как ${user.displayName}` : "";
+}
+
 function withTimeout(promise, message = "Запрос занял слишком много времени.", timeoutMs = requestTimeoutMs) {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
@@ -195,6 +201,7 @@ function handleSessionError(error) {
   if (error.status !== 401) return false;
   sharedState.user = null;
   sharedState.roomId = null;
+  updateCurrentUser(null);
   document.body.classList.add("locked");
   document.body.classList.remove("unlocked");
   setStatus("#auth-error", "Сессия истекла. Войдите снова.");
@@ -232,6 +239,7 @@ function initAccessGate() {
       });
       sharedState.user = data.user;
       sharedState.roomId = data.room.id;
+      updateCurrentUser(data.user);
       passwordInput.value = "";
       unlockRoom();
       startSharedRoom();
@@ -246,6 +254,7 @@ function initAccessGate() {
   apiRequest("/auth/me").then((data) => {
       sharedState.user = data.user;
       sharedState.roomId = data.room.id;
+      updateCurrentUser(data.user);
       unlockRoom();
       startSharedRoom();
     }).catch(() => {});
@@ -635,6 +644,9 @@ async function renderGallery() {
       day: "numeric",
       month: "long"
     });
+    const author = document.createElement("span");
+    author.className = "content-author";
+    author.textContent = item.authorDisplayName || item.author_display_name || "Неизвестный бибизян";
     const deleteButton = document.createElement("button");
     deleteButton.className = "gallery-delete";
     deleteButton.type = "button";
@@ -645,7 +657,7 @@ async function renderGallery() {
         deleteGalleryItem(item.id, item.version);
       }
     });
-    body.append(caption, date, deleteButton);
+    body.append(caption, author, date, deleteButton);
 
     card.append(body);
     grid.append(card);
@@ -837,7 +849,10 @@ function appendMemoryCard(timeline, item) {
   label.textContent = getMemoryLabel(item);
   const text = document.createElement("p");
   text.textContent = item.text;
-  card.append(time, label, text);
+  const author = document.createElement("span");
+  author.className = "content-author";
+  author.textContent = item.authorDisplayName || item.author_display_name || "Неизвестный бибизян";
+  card.append(time, label, text, author);
 
   if (item.pending) {
     const pendingNote = document.createElement("span");
@@ -964,6 +979,8 @@ function initMemories() {
       memory_date: memoryDate,
       label,
       created_at: new Date().toISOString(),
+      authorDisplayName: sharedState.user?.displayName || "Неизвестный бибизян",
+      author_display_name: sharedState.user?.displayName || "Неизвестный бибизян",
       pending: true
     };
 
@@ -1138,6 +1155,7 @@ function initLogout() {
     stopPolling();
     sharedState.user = null;
     sharedState.roomId = null;
+    updateCurrentUser(null);
     sharedState.initialized = false;
     sharedState.pendingMemories = [];
     sharedState.memoriesCache = [];

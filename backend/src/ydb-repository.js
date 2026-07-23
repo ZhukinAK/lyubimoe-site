@@ -3,6 +3,7 @@ import ydbSdk from "ydb-sdk";
 import { ApiError } from "./errors.js";
 
 const { Driver, MetadataAuthService, TypedData } = ydbSdk;
+const UNKNOWN_AUTHOR = "Неизвестный бибизян";
 
 function quote(value) {
   if (value === null || value === undefined) return "NULL";
@@ -23,10 +24,13 @@ function calendarDate(value) {
 }
 
 function mapMemory(row) {
+  const authorDisplayName = row.author_username === "legacy" ? UNKNOWN_AUTHOR : (row.author_display_name || UNKNOWN_AUTHOR);
   return {
     id: row.id,
     roomId: row.room_id,
     authorId: row.author_id,
+    authorDisplayName,
+    author_display_name: authorDisplayName,
     text: row.text,
     memoryDate: calendarDate(row.memory_date),
     memory_date: calendarDate(row.memory_date),
@@ -39,10 +43,13 @@ function mapMemory(row) {
 }
 
 function mapGallery(row) {
+  const authorDisplayName = row.author_username === "legacy" ? UNKNOWN_AUTHOR : (row.author_display_name || UNKNOWN_AUTHOR);
   return {
     id: row.id,
     roomId: row.room_id,
     authorId: row.author_id,
+    authorDisplayName,
+    author_display_name: authorDisplayName,
     caption: row.caption,
     objectKey: row.object_key,
     storage_path: row.object_key,
@@ -72,7 +79,7 @@ export async function createYdbRepository(config) {
       return row && { id: row.id, username: row.username, displayName: row.display_name, passwordHash: row.password_hash, active: row.status === "active" };
     },
     async getMembership(userId, roomSlug) {
-      const [row] = await select(`SELECT rm.user_id, rm.room_id, rm.role, r.slug, r.name FROM room_members AS rm INNER JOIN rooms AS r ON rm.room_id = r.id WHERE rm.user_id = ${quote(userId)} AND r.slug = ${quote(roomSlug)} LIMIT 1;`);
+      const [row] = await select(`SELECT rm.user_id AS user_id, rm.room_id AS room_id, rm.role AS role, r.slug AS slug, r.name AS name FROM room_members AS rm INNER JOIN rooms AS r ON rm.room_id = r.id WHERE rm.user_id = ${quote(userId)} AND r.slug = ${quote(roomSlug)} LIMIT 1;`);
       return row && { userId: row.user_id, roomId: row.room_id, roomSlug: row.slug, roomName: row.name, role: row.role, user: await this.getPublicUser(userId) };
     },
     async getPublicUser(userId) {
@@ -92,7 +99,7 @@ export async function createYdbRepository(config) {
     },
     revokeSession: (tokenHash, now) => run(`UPDATE sessions SET revoked_at = Timestamp(${quote(now)}) WHERE token_hash = ${quote(tokenHash)};`),
     async listMemories(roomId) {
-      return (await select(`SELECT * FROM memories WHERE room_id = ${quote(roomId)} AND deleted_at IS NULL ORDER BY memory_date DESC, created_at DESC;`)).map(mapMemory);
+      return (await select(`SELECT m.room_id AS room_id, m.id AS id, m.author_id AS author_id, m.text AS text, m.memory_date AS memory_date, m.label AS label, m.created_at AS created_at, m.updated_at AS updated_at, m.deleted_at AS deleted_at, m.version AS version, u.username AS author_username, u.display_name AS author_display_name FROM memories AS m LEFT JOIN users AS u ON m.author_id = u.id WHERE m.room_id = ${quote(roomId)} AND m.deleted_at IS NULL ORDER BY m.memory_date DESC, m.created_at DESC;`)).map(mapMemory);
     },
     async createMemory(input) {
       await run(`INSERT INTO memories (room_id, id, author_id, text, memory_date, label, created_at, updated_at, deleted_at, version) VALUES (${quote(input.roomId)}, ${quote(input.id)}, ${quote(input.authorId)}, ${quote(input.text)}, Date(${quote(input.memoryDate)}), ${quote(input.label)}, Timestamp(${quote(input.now)}), Timestamp(${quote(input.now)}), NULL, 1);`);
@@ -104,7 +111,7 @@ export async function createYdbRepository(config) {
       await run(`UPDATE memories SET deleted_at = Timestamp(${quote(now)}), updated_at = Timestamp(${quote(now)}), version = version + 1 WHERE room_id = ${quote(roomId)} AND id = ${quote(id)} AND version = ${version};`);
     },
     async listGallery(roomId) {
-      return (await select(`SELECT * FROM gallery_items WHERE room_id = ${quote(roomId)} AND status = 'ready' AND deleted_at IS NULL ORDER BY created_at DESC;`)).map(mapGallery);
+      return (await select(`SELECT g.room_id AS room_id, g.id AS id, g.author_id AS author_id, g.caption AS caption, g.object_key AS object_key, g.content_type AS content_type, g.size AS size, g.status AS status, g.created_at AS created_at, g.updated_at AS updated_at, g.deleted_at AS deleted_at, g.version AS version, u.username AS author_username, u.display_name AS author_display_name FROM gallery_items AS g LEFT JOIN users AS u ON g.author_id = u.id WHERE g.room_id = ${quote(roomId)} AND g.status = 'ready' AND g.deleted_at IS NULL ORDER BY g.created_at DESC;`)).map(mapGallery);
     },
     async createGalleryIntent(input) {
       await run(`INSERT INTO gallery_items (room_id, id, author_id, caption, object_key, content_type, size, status, created_at, updated_at, deleted_at, version) VALUES (${quote(input.roomId)}, ${quote(input.id)}, ${quote(input.authorId)}, ${quote(input.caption)}, ${quote(input.objectKey)}, ${quote(input.contentType)}, ${input.size}, 'pending', Timestamp(${quote(input.now)}), Timestamp(${quote(input.now)}), NULL, 1);`);

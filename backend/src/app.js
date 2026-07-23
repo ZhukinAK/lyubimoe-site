@@ -93,7 +93,10 @@ export function createApp({ repo, storage, passwordVerifier, config, now = () =>
         assert(membership, 403, "room_forbidden", "Нет доступа к комнате.");
         const token = newToken();
         await repo.createSession({ tokenHash: sha256(token), userId: user.id, expiresAt: new Date(now().getTime() + SESSION_TTL_MS), ip });
-        return response(200, { user: { id: user.id, username: user.username, displayName: user.displayName }, room: membership }, {
+        return response(200, {
+          user: { id: user.id, username: user.username, displayName: user.displayName },
+          room: { id: membership.roomId, slug: membership.roomSlug, name: membership.roomName }
+        }, {
           ...corsHeaders,
           "set-cookie": sessionCookie(token, config.cookieDomain)
         });
@@ -113,7 +116,7 @@ export function createApp({ repo, storage, passwordVerifier, config, now = () =>
       if (method === "POST" && path === "/memories") {
         const input = memoryInput(parseBody(event));
         const item = await repo.createMemory({ id: crypto.randomUUID(), roomId: auth.roomId, authorId: auth.userId, ...input, now: now() });
-        return response(201, { item }, corsHeaders);
+        return response(201, { item: { ...item, authorDisplayName: auth.user.displayName, author_display_name: auth.user.displayName } }, corsHeaders);
       }
       const memoryDelete = routeMatch(path, "/memories/:id");
       if (method === "DELETE" && memoryDelete) {
@@ -133,7 +136,11 @@ export function createApp({ repo, storage, passwordVerifier, config, now = () =>
         const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[input.contentType];
         const objectKey = `${auth.roomId}/${id}.${extension}`;
         const item = await repo.createGalleryIntent({ id, roomId: auth.roomId, authorId: auth.userId, objectKey, ...input, now: now() });
-        return response(201, { item, uploadUrl: await storage.uploadUrl(objectKey, input.contentType), expiresIn: 900 }, corsHeaders);
+        return response(201, {
+          item: { ...item, authorDisplayName: auth.user.displayName, author_display_name: auth.user.displayName },
+          uploadUrl: await storage.uploadUrl(objectKey, input.contentType),
+          expiresIn: 900
+        }, corsHeaders);
       }
       if (method === "POST" && path === "/gallery/complete") {
         const body = parseBody(event);
@@ -143,7 +150,14 @@ export function createApp({ repo, storage, passwordVerifier, config, now = () =>
         const metadata = await storage.head(item.objectKey);
         assert(metadata && metadata.size === item.size && metadata.contentType === item.contentType, 409, "upload_mismatch", "Параметры загруженного файла не совпадают.");
         const ready = await repo.completeGallery({ id, roomId: auth.roomId, version: item.version, now: now() });
-        return response(200, { item: { ...ready, imageUrl: await storage.readUrl(ready.objectKey) } }, corsHeaders);
+        return response(200, {
+          item: {
+            ...ready,
+            authorDisplayName: auth.user.displayName,
+            author_display_name: auth.user.displayName,
+            imageUrl: await storage.readUrl(ready.objectKey)
+          }
+        }, corsHeaders);
       }
       const galleryDelete = routeMatch(path, "/gallery/:id");
       if (method === "DELETE" && galleryDelete) {

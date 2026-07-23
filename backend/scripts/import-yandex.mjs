@@ -36,7 +36,7 @@ const run = (query) => driver.tableClient.withSessionRetry((session) => session.
 
 try {
   await run(`UPSERT INTO rooms (id, slug, name, created_at) VALUES (${quote(roomId)}, ${quote(roomSlug)}, 'Наша комната', CurrentUtcTimestamp());`);
-  await run(`UPSERT INTO users (id, username, display_name, password_hash, status, created_at, updated_at) VALUES (${quote(legacyUserId)}, 'legacy', 'Архив', '!', 'system', CurrentUtcTimestamp(), CurrentUtcTimestamp());`);
+  await run(`UPSERT INTO users (id, username, display_name, password_hash, status, created_at, updated_at) VALUES (${quote(legacyUserId)}, 'legacy', 'Неизвестный бибизян', '!', 'system', CurrentUtcTimestamp(), CurrentUtcTimestamp());`);
 
   for (const item of manifest.memories) {
     await run(`UPSERT INTO memories (room_id, id, author_id, text, memory_date, label, created_at, updated_at, deleted_at, version) VALUES (${quote(roomId)}, ${quote(item.id)}, ${quote(legacyUserId)}, ${quote(item.text)}, Date(${quote(item.memory_date)}), ${quote(item.label || "момент")}, ${timestamp(item.created_at)}, ${timestamp(item.created_at)}, ${timestamp(item.deleted_at)}, 1);`);

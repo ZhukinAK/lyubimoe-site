@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Место для двоих</title>
-    <link rel="stylesheet" href="styles.css?v=file-button-v1">
+    <link rel="stylesheet" href="styles.css?v=user-names-v1">
   </head>
   <body class="locked">
     <section class="auth-screen" aria-labelledby="auth-title">
@@ -39,7 +39,10 @@
           <a href="#gallery" data-route="gallery">Галерея</a>
           <a href="#memories" data-route="memories">Воспоминания</a>
         </nav>
-        <button class="button small" type="button" id="logout-button">Выйти</button>
+        <div class="user-menu">
+          <span class="current-user" id="current-user" aria-live="polite"></span>
+          <button class="button small" type="button" id="logout-button">Выйти</button>
+        </div>
       </header>
 
       <main>
@@ -243,6 +246,6 @@
     </div>
 
     <script src="api-config.js?v=yandex-api-v1"></script>
-    <script src="app.js?v=yandex-api-v1"></script>
+    <script src="app.js?v=user-names-v1"></script>
   </body>
 </html>
