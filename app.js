@@ -8,6 +8,7 @@ const signedUrlTtlSeconds = 3600;
 const imagePlaceholder =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%23f8fbff'/%3E%3C/svg%3E";
 const imageUrlCache = new Map();
+let galleryRenderRequest = 0;
 
 let sharedState = {
   user: null,
@@ -592,6 +593,7 @@ function closePhotoViewer() {
 }
 
 async function renderGallery() {
+  const requestId = ++galleryRenderRequest;
   const grid = document.querySelector("#gallery-grid");
   grid.innerHTML = "";
 
@@ -607,12 +609,16 @@ async function renderGallery() {
     setSyncStatus("Загружаем общую комнату...");
     items = await getGalleryItems();
   } catch (error) {
+    if (requestId !== galleryRenderRequest) return;
     if (handleSessionError(error)) return;
     renderGalleryEmpty(grid);
     setSyncStatus("Не получилось прочитать общую галерею.");
     setGalleryStatus("Не получилось прочитать галерею.");
     return;
   }
+
+  if (requestId !== galleryRenderRequest) return;
+  grid.innerHTML = "";
 
   if (!items.length) {
     renderGalleryEmpty(grid);
